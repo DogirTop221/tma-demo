@@ -1,24 +1,22 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowLeft, ArrowRight, CalendarDays, Check, ChevronRight, Clock3, Gift, MapPin, Minus, Plus, Scissors, Search, Share2, ShoppingBag, Sparkles, Star, UserRound, WalletCards, X } from 'lucide-react'
+import { ADMIN_SESSION_KEY, AdminLogin, AdminPanel, DEFAULT_SERVICES, ORDERS_KEY, SERVICES_KEY, SETTINGS_KEY, type AdminOrder, type AdminService } from './AdminPanel'
 
 declare global { interface Window { Telegram?: { WebApp?: any } } }
-type Service = { id: number; name: string; category: string; description: string; price: number; duration: number; badge?: string; image: string }
-type Order = { id: string; date: string; time: string; services: string[]; total: number }
-const services: Service[] = [
-  { id: 1, name: 'Мужская стрижка', category: 'Стрижки', description: 'Форма, текстура и укладка — всё как надо.', price: 1800, duration: 45, badge: 'Хит', image: 'photo-1503951914875-452162b0f3f1' },
-  { id: 2, name: 'Стрижка + борода', category: 'Комплексы', description: 'Чёткий силуэт от макушки до подбородка.', price: 2800, duration: 75, badge: 'Хит', image: 'photo-1621605815971-fbc98d665033' },
-  { id: 3, name: 'Оформление бороды', category: 'Борода', description: 'Контур, горячее полотенце и уход.', price: 1300, duration: 30, image: 'photo-1622286342621-4bd786c2447c' },
-  { id: 4, name: 'Стрижка машинкой', category: 'Стрижки', description: 'Чистая работа и идеальные переходы.', price: 1200, duration: 30, image: 'photo-1599351431202-1e0f0137899a' },
-  { id: 5, name: 'Папа + сын', category: 'Комплексы', description: 'Время для себя и маленького джентльмена.', price: 3200, duration: 90, badge: 'Выгодно', image: 'photo-1517832606299-7ae9b720a186' },
-  { id: 6, name: 'Королевское бритьё', category: 'Борода', description: 'Ритуал с распариванием и авторским уходом.', price: 1700, duration: 45, badge: 'Новинка', image: 'photo-1593702295094-aea639a2b1c0' },
-]
+type Service = AdminService
+type Order = AdminOrder
 const categories = ['Все', 'Стрижки', 'Борода', 'Комплексы']
+const safeRead = <T,>(key: string, fallback: T): T => { try { return JSON.parse(localStorage.getItem(key) || 'null') ?? fallback } catch { return fallback } }
 const slots = ['10:00', '11:30', '13:00', '14:30', '16:00', '17:30', '19:00']
 const money = (n: number) => `${n.toLocaleString('ru-RU')} ₽`
 const photo = (id: string) => `https://images.unsplash.com/${id}?auto=format&fit=crop&w=700&q=80`
 const haptic = () => { try { window.Telegram?.WebApp?.HapticFeedback?.impactOccurred('light') } catch { /* browser fallback */ } }
 
 export default function App() {
+  const [adminMode, setAdminMode] = useState(() => new URLSearchParams(window.location.search).get('admin') === '1')
+  const [adminAuthenticated, setAdminAuthenticated] = useState(() => sessionStorage.getItem(ADMIN_SESSION_KEY) === '1')
+  const [logoClicks, setLogoClicks] = useState<number[]>([])
+  const [services, setServices] = useState<Service[]>(() => safeRead(SERVICES_KEY, DEFAULT_SERVICES))
   const [user, setUser] = useState('Гость')
   const [tab, setTab] = useState('home')
   const [category, setCategory] = useState('Все')
@@ -29,20 +27,22 @@ export default function App() {
   const [selectedDate, setSelectedDate] = useState(0)
   const [selectedTime, setSelectedTime] = useState('')
   const [success, setSuccess] = useState<Order | null>(null)
-  const [orders, setOrders] = useState<Order[]>(() => { try { return JSON.parse(localStorage.getItem('northside-orders') || '[]') } catch { return [] } })
+  const [orders, setOrders] = useState<Order[]>(() => safeRead(ORDERS_KEY, []))
   useEffect(() => { const tg = window.Telegram?.WebApp; try { tg?.ready(); tg?.expand() } catch { /* optional Telegram API */ } setUser(tg?.initDataUnsafe?.user?.first_name || 'Гость'); const timer = window.setTimeout(() => setLoading(false), 650); return () => window.clearTimeout(timer) }, [])
-  const entries = useMemo(() => services.filter(s => cart[s.id]).map(s => ({ ...s, count: cart[s.id] })), [cart])
+  const entries = useMemo(() => services.filter(s => cart[s.id]).map(s => ({ ...s, count: cart[s.id] })), [cart, services])
   const total = entries.reduce((sum, s) => sum + s.price * s.count, 0)
   const count = entries.reduce((sum, s) => sum + s.count, 0)
   const filtered = services.filter(s => (category === 'Все' || s.category === category) && `${s.name} ${s.description}`.toLowerCase().includes(query.toLowerCase()))
   const dateOptions = Array.from({ length: 7 }, (_, i) => { const date = new Date(); date.setDate(date.getDate() + i); return { day: date.toLocaleDateString('ru-RU', { weekday: 'short' }).replace('.', ''), num: date.getDate(), month: date.toLocaleDateString('ru-RU', { month: 'short' }).replace('.', '') } })
   const changeQty = (id: number, delta: number) => { haptic(); setCart(current => { const next = { ...current, [id]: Math.max(0, (current[id] || 0) + delta) }; if (!next[id]) delete next[id]; return next }) }
   const go = (next: string) => { haptic(); setTab(next); setSuccess(null) }
-  const checkout = () => { if (!count || !selectedTime) return; const order: Order = { id: `NS-${Math.random().toString(36).slice(2, 8).toUpperCase()}`, date: `${dateOptions[selectedDate].num} ${dateOptions[selectedDate].month}`, time: selectedTime, services: entries.map(s => `${s.name}${s.count > 1 ? ` × ${s.count}` : ''}`), total }; const next = [order, ...orders]; setOrders(next); localStorage.setItem('northside-orders', JSON.stringify(next)); setCart({}); setSuccess(order); setTab('cart'); setSelectedTime('') }
+  const checkout = () => { if (!count || !selectedTime) return; const now = new Date(); const order: Order = { id: `NS-${Math.random().toString(36).slice(2, 8).toUpperCase()}`, date: `${dateOptions[selectedDate].num} ${dateOptions[selectedDate].month}`, time: selectedTime, services: entries.map(s => `${s.name}${s.count > 1 ? ` × ${s.count}` : ''}`), total, customerName: user, contact: window.Telegram?.WebApp?.initDataUnsafe?.user?.username ? `@${window.Telegram.WebApp.initDataUnsafe.user.username}` : '', createdAt: now.toISOString(), status: 'Новая' }; const next = [order, ...orders]; setOrders(next); localStorage.setItem(ORDERS_KEY, JSON.stringify(next)); const config = safeRead(SETTINGS_KEY, { token: '', chatId: '' }); if (config.token && config.chatId) { const message = `✂️ Новая запись ${order.id}\nКлиент: ${order.customerName}${order.contact ? ` (${order.contact})` : ''}\n${order.date} · ${order.time}\n${order.services.join(', ')}\nИтого: ${money(order.total)}`; fetch(`https://api.telegram.org/bot${config.token}/sendMessage`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chat_id: config.chatId, text: message }) }).catch(() => {}) } setCart({}); setSuccess(order); setTab('cart'); setSelectedTime('') }
   useEffect(() => { const main = window.Telegram?.WebApp?.MainButton; if (!main) return; if (tab === 'cart' && !success && count > 0) { main.setText(selectedTime ? `Записаться · ${money(total)}` : 'Выберите время записи'); if (selectedTime) main.enable(); else main.disable(); main.show(); const handler = () => checkout(); main.onClick(handler); return () => { main.offClick(handler); main.hide() } } main.hide() }, [tab, success, count, selectedTime, total])
   const add = (id: number) => changeQty(id, 1)
+  if (adminMode) return adminAuthenticated ? <AdminPanel onLogout={() => { setAdminAuthenticated(false); setAdminMode(false); setServices(safeRead(SERVICES_KEY, DEFAULT_SERVICES)); const url = new URL(window.location.href); url.searchParams.delete('admin'); window.history.replaceState({}, '', url) }} /> : <AdminLogin onLogin={() => setAdminAuthenticated(true)} />
+  const openHiddenAdmin = () => { const now = Date.now(); const recent = [...logoClicks.filter(t => now - t < 1800), now]; setLogoClicks(recent); if (recent.length >= 5) { setAdminMode(true); setLogoClicks([]) } else go('home') }
   return <main className="app-shell">
-    <header className="topbar"><a className="brand" onClick={() => go('home')}><span className="brand-mark"><Scissors size={19}/></span><span>NORTHSIDE<small>BARBER CLUB · MOSCOW</small></span></a><button className="avatar" onClick={() => go('profile')} aria-label="Профиль"><UserRound size={19}/></button></header>
+    <header className="topbar"><a className="brand" onClick={openHiddenAdmin}><span className="brand-mark"><Scissors size={19}/></span><span>NORTHSIDE<small>BARBER CLUB · MOSCOW</small></span></a><button className="avatar" onClick={() => go('profile')} aria-label="Профиль"><UserRound size={19}/></button></header>
     <div className="screen" key={success ? 'success' : tab}>
       {tab === 'home' && <>
         <section className="hero"><div className="hero-copy"><span className="eyebrow"><span className="live-dot"/> БАРБЕРШОП · МОСКВА</span><h1>Выгляди<br/>как <em>надо.</em></h1><p>Привет, {user}. Твой стиль —<br/>в надёжных руках.</p><button className="hero-cta" onClick={() => document.getElementById('catalog')?.scrollIntoView({ behavior: 'smooth' })}>Выбрать услугу <ArrowRight size={16}/></button></div><div className="hero-image"/><div className="hero-index">01 <span/> 03</div></section>
