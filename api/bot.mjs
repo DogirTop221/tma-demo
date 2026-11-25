@@ -4,7 +4,7 @@ export default async function handler(req, res) {
   }
 
   const token = process.env.BOT_TOKEN;
-  const appUrl = 'https://vercel.app';
+  const appUrl = 'https://tma-demo-alpha.vercel.app/';
   const secretCommand = '/boss2026'; // Ваша секретная команда для админов
 
   const message = req.body?.message;
