@@ -29,7 +29,7 @@ export default async function handler(req, res) {
     targetUrl = appUrl;
   }
 
-  await fetch(`https://telegram.org{token}/sendMessage`, {
+  await fetch(`https://telegram.org${token}/sendMessage`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
